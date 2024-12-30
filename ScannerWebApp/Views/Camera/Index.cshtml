@@ -1,13 +1,12 @@
 ﻿@{
-    ViewData["Title"] = "ID Card Scanner";
+    Layout = null;
 }
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@ViewData["Title"]</title>
+    <title>ID Card Scanner</title>
     <style>
         * {
             margin: 0;
@@ -22,7 +21,6 @@
             align-items: center;
             height: 100vh;
             background-color: #f4f4f4;
-            padding: 0 10px;
         }
 
         #video-area {
@@ -31,34 +29,38 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            width: 100%;
-            max-width: 480px;
-            position: relative;
+            margin: 20px;
+            width: 90%;
+            max-width: 480px; /* For a max width */
         }
 
         #video {
             width: 100%;
             height: auto;
-            border: 6px solid red;
+            max-width: 480px;
+            position: relative;
+            border: 6px solid red; /* Outer red border size */
         }
 
         .green-border {
             border-color: green !important;
         }
 
+        /* Green Helper Box in the center */
         .guide-box {
             position: absolute;
-            top: 10%;
+            top: 25%;
             left: 10%;
             width: 80%;
             height: auto;
-            padding-bottom: 51%; /* Aspect Ratio: 8.5 * 5.5 cm */
+            padding-bottom: 51%; /* 8.5 cm * 5.5 cm aspect ratio */
             border: 2px dashed green;
             box-sizing: border-box;
             display: block;
             pointer-events: none;
         }
 
+        /* Text under video */
         #guidance {
             text-align: center;
             margin-top: 10px;
@@ -75,6 +77,62 @@
             border: none;
             border-radius: 5px;
         }
+
+        #proceed-btn, #retry-btn {
+            margin-top: 20px;
+            padding: 12px 24px;
+            font-size: 18px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            display: none;
+        }
+
+        #proceed-btn {
+            background-color: blue;
+            color: white;
+        }
+
+        #retry-btn {
+            background-color: orange;
+            color: white;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .button-group button {
+            margin: 0 10px;
+        }
+
+        /* Responsiveness */
+        media (max-width: 480px) {
+            #video {
+                width: 100%;
+            }
+
+            #video-area {
+                width: 90%;
+            }
+
+            #capture-btn, #proceed-btn, #retry-btn {
+                width: 100%;
+                font-size: 16px;
+            }
+        }
+
+        media (max-width: 768px) {
+            #video {
+                width: 90%;
+            }
+
+            #video-area {
+                width: 80%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -82,12 +140,17 @@
         <video id="video" autoplay></video>
         <canvas id="canvas" style="display:none;"></canvas>
 
+        <!-- Outer red border is managed by video container -->
         <div id="guide-box" class="guide-box">
             <span style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: white; font-size: 16px;">Place ID Card Here</span>
         </div>
 
         <div id="guidance">Position the card inside the green rectangle and ensure it fills the frame.</div>
         <button id="capture-btn">Capture Image</button>
+        <div class="button-group">
+            <button id="proceed-btn">Proceed</button>
+            <button id="retry-btn">Retry</button>
+        </div>
     </div>
 
     <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
@@ -97,6 +160,9 @@
         const context = canvas.getContext("2d");
         const guidance = document.getElementById("guidance");
         const guideBox = document.getElementById("guide-box");
+        const captureBtn = document.getElementById("capture-btn");
+        const proceedBtn = document.getElementById("proceed-btn");
+        const retryBtn = document.getElementById("retry-btn");
 
         const constraints = { video: { facingMode: "environment" } };
 
@@ -111,9 +177,12 @@
         cv['onRuntimeInitialized'] = () => {
             video.addEventListener("play", () => {
                 const interval = setInterval(() => {
+                    // Draw the video frame onto the canvas
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // Get the frame from canvas as an OpenCV Mat
                     const src = cv.imread(canvas);
                     const gray = new cv.Mat();
                     const contours = new cv.MatVector();
@@ -123,16 +192,13 @@
                     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
                     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
 
-                    // Use Canny edge detection to find edges more reliably
+                    // Use Canny edge detection to detect edges
                     cv.Canny(gray, gray, 50, 150);
 
+                    // Find contours
                     cv.findContours(gray, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
                     let cardDetected = false;
-                    let cardArea = 0;
-                    const guideBoxRect = guideBox.getBoundingClientRect();
-                    const guideBoxArea = guideBoxRect.width * guideBoxRect.height;
-
                     for (let i = 0; i < contours.size(); i++) {
                         const contour = contours.get(i);
                         const approximatedContour = new cv.Mat();
@@ -145,19 +211,21 @@
                         if (approximatedContour.rows === 4) {
                             const rect = cv.boundingRect(approximatedContour);
                             const aspectRatio = rect.width / rect.height;
-
-                            const minAspectRatio = 1.4;
+                            const minAspectRatio = 1.4; // acceptable range for card aspect ratio
                             const maxAspectRatio = 1.8;
 
                             const minArea = (canvas.width * canvas.height) * 0.1;
                             const area = rect.width * rect.height;
 
+                            // Validate aspect ratio and size
                             if (aspectRatio >= minAspectRatio && aspectRatio <= maxAspectRatio && area >= minArea) {
                                 cardDetected = true;
-                                cardArea = area; // Save detected card area
                                 context.strokeStyle = "green";
                                 context.lineWidth = 3;
                                 context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+                                video.className = "green-border";
+                                guideBox.classList.add("green-guide");
+                                guidance.textContent = "Card detected! Ready to capture.";
                                 break;
                             }
                         }
@@ -165,18 +233,10 @@
                         approximatedContour.delete();
                     }
 
-                    // Calculate the percentage of card fill in the guide box
-                    const cardFillPercentage = cardDetected ? (cardArea / guideBoxArea) * 100 : 0;
-
-                    // Check if the card fill is between 80% to 95%
-                    if (cardDetected && cardFillPercentage >= 80 && cardFillPercentage <= 95) {
-                        video.classList.add("green-border");
-                        guideBox.classList.add("green-guide");
-                        guidance.textContent = "Card detected! Ready to capture.";
-                    } else {
-                        video.classList.remove("green-border");
+                    if (!cardDetected) {
+                        video.className = "";
                         guideBox.classList.remove("green-guide");
-                        guidance.textContent = "Ensure the card fills enough of the frame and is positioned correctly.";
+                        guidance.textContent = "Ensure the card fills enough of the frame and is close enough.";
                     }
 
                     // Cleanup OpenCV Mat objects
@@ -189,16 +249,57 @@
         };
 
         // Capture the image when the user clicks the button
-        document.getElementById("capture-btn").addEventListener("click", () => {
-            // Ensure outer border is green (only capture if green border is detected)
-            if (video.classList.contains("green-border")) {
+        captureBtn.addEventListener("click", () => {
+            if (video.className === "green-border") {
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imageData = canvas.toDataURL("image/jpeg");
 
-                // Upload the captured image to the server
-                uploadImage(imageData);
+                const videoRect = video.getBoundingClientRect();
+                const guideRect = guideBox.getBoundingClientRect();
+
+                const scaleX = canvas.width / videoRect.width;
+                const scaleY = canvas.height / videoRect.height;
+
+                const cropX = (guideRect.left - videoRect.left) * scaleX;
+                const cropY = (guideRect.top - videoRect.top) * scaleY;
+                const cropWidth = guideRect.width * scaleX;
+                const cropHeight = guideRect.height * scaleY;
+
+                const croppedImage = context.getImageData(cropX, cropY, cropWidth, cropHeight);
+
+                const croppedCanvas = document.createElement("canvas");
+                const croppedContext = croppedCanvas.getContext("2d");
+                croppedCanvas.width = cropWidth;
+                croppedCanvas.height = cropHeight;
+                croppedContext.putImageData(croppedImage, 0, 0);
+
+                const imageData = croppedCanvas.toDataURL("image/jpeg");
+
+                // Replace video with captured image
+                video.style.display = "none";
+                guideBox.style.display = "none";
+                guidance.style.display = "none";
+                captureBtn.style.display = "none";
+
+                const imgElement = document.createElement("img");
+                imgElement.src = imageData;
+                imgElement.style.width = "100%";
+                imgElement.style.border = "6px solid green";
+                imgElement.style.boxSizing = "border-box";
+                document.getElementById("video-area").appendChild(imgElement);
+
+                proceedBtn.style.display = "inline-block";
+                retryBtn.style.display = "inline-block";
+
+                // Handle proceed and retry
+                proceedBtn.addEventListener("click", () => {
+                    uploadImage(imageData);
+                });
+
+                retryBtn.addEventListener("click", () => {
+                    window.location.reload();
+                });
             } else {
                 alert("The ID card is not detected or not positioned correctly.");
             }
@@ -206,7 +307,7 @@
 
         // Upload captured image to the server
         function uploadImage(base64Image) {
-            fetch('@Url.Action("UploadImage", "Camera")', {
+            fetch('/Camera/UploadImage', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: base64Image })
@@ -218,43 +319,6 @@
                 })
                 .catch(error => console.error("Upload failed:", error));
         }
-
-        // Handle window resize to adjust layout and position the green box and outer red border correctly
-        function adjustLayout() {
-            const windowWidth = window.innerWidth;
-            const videoArea = document.getElementById("video-area");
-            const captureBtn = document.getElementById("capture-btn");
-
-            if (windowWidth <= 480) {  // Mobile screen
-                videoArea.style.width = "90%";
-                captureBtn.style.width = "100%";
-                captureBtn.style.fontSize = "16px";
-
-                guideBox.style.top = "10%"; // Adjust green box positioning for mobile
-                guideBox.style.left = "10%";
-                guideBox.style.width = "80%";
-            } else if (windowWidth <= 768) {  // Tablet screen
-                videoArea.style.width = "80%";
-                captureBtn.style.width = "60%";
-
-                guideBox.style.top = "10%";
-                guideBox.style.left = "10%";
-                guideBox.style.width = "80%";
-            } else {  // Desktop screens
-                videoArea.style.width = "50%";
-                captureBtn.style.width = "30%";
-
-                guideBox.style.top = "10%";
-                guideBox.style.left = "10%";
-                guideBox.style.width = "80%";
-            }
-        }
-
-        // Call the adjustLayout function on window resize
-        window.addEventListener("resize", adjustLayout);
-
-        // Initial call to adjust the layout
-        adjustLayout();
     </script>
 </body>
 </html>
