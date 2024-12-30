@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.35013.160
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScannerWebApp", "ScannerWebApp\ScannerWebApp.csproj", "{8AFCFC6E-95EE-4A2B-9526-C9C2ADB622DF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8AFCFC6E-95EE-4A2B-9526-C9C2ADB622DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8AFCFC6E-95EE-4A2B-9526-C9C2ADB622DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8AFCFC6E-95EE-4A2B-9526-C9C2ADB622DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8AFCFC6E-95EE-4A2B-9526-C9C2ADB622DF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D533E2A6-4BCE-45E8-B249-E29B16A281F9}
+	EndGlobalSection
+EndGlobal

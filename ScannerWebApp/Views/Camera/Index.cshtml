@@ -1,0 +1,260 @@
+﻿@{
+    ViewData["Title"] = "ID Card Scanner";
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewData["Title"]</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f4f4f4;
+            padding: 0 10px;
+        }
+
+        #video-area {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 480px;
+            position: relative;
+        }
+
+        #video {
+            width: 100%;
+            height: auto;
+            border: 6px solid red;
+        }
+
+        .green-border {
+            border-color: green !important;
+        }
+
+        .guide-box {
+            position: absolute;
+            top: 10%;
+            left: 10%;
+            width: 80%;
+            height: auto;
+            padding-bottom: 51%; /* Aspect Ratio: 8.5 * 5.5 cm */
+            border: 2px dashed green;
+            box-sizing: border-box;
+            display: block;
+            pointer-events: none;
+        }
+
+        #guidance {
+            text-align: center;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        #capture-btn {
+            margin-top: 20px;
+            padding: 12px 24px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: green;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-area">
+        <video id="video" autoplay></video>
+        <canvas id="canvas" style="display:none;"></canvas>
+
+        <div id="guide-box" class="guide-box">
+            <span style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); color: white; font-size: 16px;">Place ID Card Here</span>
+        </div>
+
+        <div id="guidance">Position the card inside the green rectangle and ensure it fills the frame.</div>
+        <button id="capture-btn">Capture Image</button>
+    </div>
+
+    <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
+    <script>
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+        const guidance = document.getElementById("guidance");
+        const guideBox = document.getElementById("guide-box");
+
+        const constraints = { video: { facingMode: "environment" } };
+
+        // Access camera
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then((stream) => {
+                video.srcObject = stream;
+            })
+            .catch((err) => console.error("Camera access error:", err));
+
+        // Load OpenCV.js
+        cv['onRuntimeInitialized'] = () => {
+            video.addEventListener("play", () => {
+                const interval = setInterval(() => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const src = cv.imread(canvas);
+                    const gray = new cv.Mat();
+                    const contours = new cv.MatVector();
+                    const hierarchy = new cv.Mat();
+
+                    // Convert to grayscale and apply GaussianBlur to smooth edges
+                    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+                    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+
+                    // Use Canny edge detection to find edges more reliably
+                    cv.Canny(gray, gray, 50, 150);
+
+                    cv.findContours(gray, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+                    let cardDetected = false;
+                    let cardArea = 0;
+                    const guideBoxRect = guideBox.getBoundingClientRect();
+                    const guideBoxArea = guideBoxRect.width * guideBoxRect.height;
+
+                    for (let i = 0; i < contours.size(); i++) {
+                        const contour = contours.get(i);
+                        const approximatedContour = new cv.Mat();
+
+                        // Approximate contour to find shapes (rectangles)
+                        const epsilon = 0.02 * cv.arcLength(contour, true);
+                        cv.approxPolyDP(contour, approximatedContour, epsilon, true);
+
+                        // Check if the contour is a rectangle (4 vertices)
+                        if (approximatedContour.rows === 4) {
+                            const rect = cv.boundingRect(approximatedContour);
+                            const aspectRatio = rect.width / rect.height;
+
+                            const minAspectRatio = 1.4;
+                            const maxAspectRatio = 1.8;
+
+                            const minArea = (canvas.width * canvas.height) * 0.1;
+                            const area = rect.width * rect.height;
+
+                            if (aspectRatio >= minAspectRatio && aspectRatio <= maxAspectRatio && area >= minArea) {
+                                cardDetected = true;
+                                cardArea = area; // Save detected card area
+                                context.strokeStyle = "green";
+                                context.lineWidth = 3;
+                                context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+                                break;
+                            }
+                        }
+
+                        approximatedContour.delete();
+                    }
+
+                    // Calculate the percentage of card fill in the guide box
+                    const cardFillPercentage = cardDetected ? (cardArea / guideBoxArea) * 100 : 0;
+
+                    // Check if the card fill is between 80% to 95%
+                    if (cardDetected && cardFillPercentage >= 80 && cardFillPercentage <= 95) {
+                        video.classList.add("green-border");
+                        guideBox.classList.add("green-guide");
+                        guidance.textContent = "Card detected! Ready to capture.";
+                    } else {
+                        video.classList.remove("green-border");
+                        guideBox.classList.remove("green-guide");
+                        guidance.textContent = "Ensure the card fills enough of the frame and is positioned correctly.";
+                    }
+
+                    // Cleanup OpenCV Mat objects
+                    src.delete();
+                    gray.delete();
+                    contours.delete();
+                    hierarchy.delete();
+                }, 100);
+            });
+        };
+
+        // Capture the image when the user clicks the button
+        document.getElementById("capture-btn").addEventListener("click", () => {
+            // Ensure outer border is green (only capture if green border is detected)
+            if (video.classList.contains("green-border")) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL("image/jpeg");
+
+                // Upload the captured image to the server
+                uploadImage(imageData);
+            } else {
+                alert("The ID card is not detected or not positioned correctly.");
+            }
+        });
+
+        // Upload captured image to the server
+        function uploadImage(base64Image) {
+            fetch('@Url.Action("UploadImage", "Camera")', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Image })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Server Response:", data);
+                    alert(data.message || "Image uploaded successfully!");
+                })
+                .catch(error => console.error("Upload failed:", error));
+        }
+
+        // Handle window resize to adjust layout and position the green box and outer red border correctly
+        function adjustLayout() {
+            const windowWidth = window.innerWidth;
+            const videoArea = document.getElementById("video-area");
+            const captureBtn = document.getElementById("capture-btn");
+
+            if (windowWidth <= 480) {  // Mobile screen
+                videoArea.style.width = "90%";
+                captureBtn.style.width = "100%";
+                captureBtn.style.fontSize = "16px";
+
+                guideBox.style.top = "10%"; // Adjust green box positioning for mobile
+                guideBox.style.left = "10%";
+                guideBox.style.width = "80%";
+            } else if (windowWidth <= 768) {  // Tablet screen
+                videoArea.style.width = "80%";
+                captureBtn.style.width = "60%";
+
+                guideBox.style.top = "10%";
+                guideBox.style.left = "10%";
+                guideBox.style.width = "80%";
+            } else {  // Desktop screens
+                videoArea.style.width = "50%";
+                captureBtn.style.width = "30%";
+
+                guideBox.style.top = "10%";
+                guideBox.style.left = "10%";
+                guideBox.style.width = "80%";
+            }
+        }
+
+        // Call the adjustLayout function on window resize
+        window.addEventListener("resize", adjustLayout);
+
+        // Initial call to adjust the layout
+        adjustLayout();
+    </script>
+</body>
+</html>
